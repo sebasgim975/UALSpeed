@@ -72,8 +72,7 @@ except Exception:
 
 
 # inicializar métricas globais Redis
-if redis_client:
-
+if redis_client and not cloud_mode:
     redis_client.setnx("home", 0)
     redis_client.setnx("drivers_get", 0)
     redis_client.setnx("drivers_post", 0)
@@ -132,8 +131,7 @@ if not cloud_mode:
 
 @app.get("/")
 def home():
-    if redis_client:
-        redis_client.incr("home")
+    if redis_client and not cloud_mode:        redis_client.incr("home")
     else:
         local_metrics["home"] += 1
 
@@ -155,7 +153,7 @@ def get_drivers():
             }
         ]
 
-    if redis_client:
+    if redis_client and not cloud_mode:
         redis_client.incr("drivers_get")
     else:
         local_metrics["drivers_get"] += 1
@@ -165,7 +163,7 @@ def get_drivers():
     # verificar cache Redis
     cached_drivers = None
 
-    if redis_client:
+    if redis_client and not cloud_mode:
         cached_drivers = redis_client.get("drivers")
     if cached_drivers:
 
@@ -189,7 +187,7 @@ def get_drivers():
     for driver in drivers_collection.find({}, {"_id": 0}):
         drivers.append(driver)
 
-    if redis_client:
+    if redis_client and not cloud_mode:
         redis_client.set("drivers", json.dumps(drivers))
 
     response_time = time.time() - start_time
@@ -206,7 +204,7 @@ def get_drivers():
 
 @app.post("/drivers")
 def add_driver(driver: Driver):
-    if redis_client:
+    if redis_client and not cloud_mode:
         redis_client.incr("drivers_post")
     else:
         local_metrics["drivers_post"] += 1
@@ -237,7 +235,7 @@ def add_driver(driver: Driver):
 
 @app.delete("/drivers/{number}")
 def delete_driver(number: int):
-    if redis_client:
+    if redis_client and not cloud_mode:
         redis_client.incr("drivers_delete")
     else:
         local_metrics["drivers_delete"] += 1
@@ -264,7 +262,7 @@ def delete_driver(number: int):
 
 @app.get("/metrics")
 def metrics():
-    if not redis_client:
+    if cloud_mode or not redis_client:
 
         total_requests = sum(local_metrics.values())
 
@@ -336,7 +334,7 @@ def reset_metrics():
 
 @app.get("/queue")
 def get_queue():
-    if not redis_client:
+    if cloud_mode or not redis_client:
 
         return {
             "queue": []
