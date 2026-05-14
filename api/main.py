@@ -7,6 +7,7 @@ import json
 import time
 import random
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 app = FastAPI()
 app.add_middleware(
@@ -26,91 +27,102 @@ class Driver(BaseModel):
 
 
 client = None
+cloud_mode = False
 
-# esperar MongoDB Replica Set
-while client is None:
-    try:
+try:
 
-        client = MongoClient(
-            "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0",
-            serverSelectionTimeoutMS=5000
-        )
+    client = MongoClient(
+        "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0",
+        serverSelectionTimeoutMS=5000
+    )
 
-        client.admin.command("ping")
+    client.admin.command("ping")
 
-        print("Connected to MongoDB Replica Set")
+    print("Connected to MongoDB Replica Set")
 
-    except Exception:
+except Exception:
 
-        print("MongoDB not ready, retrying...")
-        time.sleep(5)
+    print("MongoDB unavailable - running in cloud mode")
+    cloud_mode = True
 
 
-# ligação Redis
-redis_client = redis.Redis(
-    host="redis",
-    port=6379,
-    decode_responses=True
-)
+redis_client = None
 
-print("Connected to Redis")
+try:
+
+    redis_client = redis.Redis(
+        host="redis",
+        port=6379,
+        decode_responses=True
+    )
+
+    redis_client.ping()
+
+    print("Connected to Redis")
+
+except Exception:
+
+    print("Redis unavailable - running without cache")
 
 
 # inicializar métricas globais Redis
-redis_client.setnx("home", 0)
-redis_client.setnx("drivers_get", 0)
-redis_client.setnx("drivers_post", 0)
-redis_client.setnx("drivers_delete", 0)
+if redis_client:
 
-redis_client.setnx("drivers_get_total_time", 0)
-redis_client.setnx("drivers_get_count", 0)
+    redis_client.setnx("home", 0)
+    redis_client.setnx("drivers_get", 0)
+    redis_client.setnx("drivers_post", 0)
+    redis_client.setnx("drivers_delete", 0)
 
-
-# MongoDB
-db = client["ualspeed"]
-drivers_collection = db["drivers"]
-
-# índice único
-drivers_collection.create_index("number", unique=True)
+    redis_client.setnx("drivers_get_total_time", 0)
+    redis_client.setnx("drivers_get_count", 0)
 
 
-# inserir dados iniciais sem duplicados
-while True:
-    try:
+if not cloud_mode:
 
-        drivers_collection.update_one(
-            {"number": 1},
-            {
-                "$setOnInsert": {
-                    "name": "Max Verstappen",
-                    "team": "Red Bull",
-                    "number": 1
-                }
-            },
-            upsert=True
-        )
+    db = client["ualspeed"]
+    drivers_collection = db["drivers"]
 
-        drivers_collection.update_one(
-            {"number": 44},
-            {
-                "$setOnInsert": {
-                    "name": "Lewis Hamilton",
-                    "team": "Ferrari",
-                    "number": 44
-                }
-            },
-            upsert=True
-        )
+    drivers_collection.create_index("number", unique=True)
 
-        print("Initial drivers checked/inserted")
 
-        break
+if not cloud_mode:
 
-    except Exception:
+    while True:
+        try:
 
-        print("MongoDB primary not ready, retrying...")
-        time.sleep(5)
+            drivers_collection.update_one(
+                {"number": 1},
+                {
+                    "$setOnInsert": {
+                        "name": "Max Verstappen",
+                        "team": "Red Bull",
+                        "nationality": "Dutch",
+                        "number": 1
+                    }
+                },
+                upsert=True
+            )
 
+            drivers_collection.update_one(
+                {"number": 44},
+                {
+                    "$setOnInsert": {
+                        "name": "Lewis Hamilton",
+                        "team": "Ferrari",
+                        "nationality": "British",
+                        "number": 44
+                    }
+                },
+                upsert=True
+            )
+
+            print("Initial drivers checked/inserted")
+            break
+
+        except Exception:
+
+            print("MongoDB primary not ready, retrying initialization...")
+            time.sleep(5)
 
 @app.get("/")
 def home():
@@ -124,14 +136,26 @@ def home():
 
 @app.get("/drivers")
 def get_drivers():
+    if cloud_mode:
+
+        return [
+            {
+                "name": "Cloud Driver",
+                "team": "Render",
+                "nationality": "Cloud",
+                "number": 99
+            }
+        ]
 
     redis_client.incr("drivers_get")
 
     start_time = time.time()
 
     # verificar cache Redis
-    cached_drivers = redis_client.get("drivers")
+    cached_drivers = None
 
+    if redis_client:
+        cached_drivers = redis_client.get("drivers")
     if cached_drivers:
 
         print("Returning drivers from Redis cache")
@@ -154,11 +178,8 @@ def get_drivers():
     for driver in drivers_collection.find({}, {"_id": 0}):
         drivers.append(driver)
 
-    # guardar cache Redis
-    redis_client.set(
-        "drivers",
-        json.dumps(drivers)
-    )
+    if redis_client:
+        redis_client.set("drivers", json.dumps(drivers))
 
     response_time = time.time() - start_time
 
@@ -291,6 +312,11 @@ def reset_metrics():
 
 @app.get("/queue")
 def get_queue():
+    if not redis_client:
+
+        return {
+            "queue": []
+        }
 
     queue = redis_client.lrange(
         "drivers_queue",
