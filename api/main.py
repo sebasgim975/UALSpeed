@@ -28,6 +28,12 @@ class Driver(BaseModel):
 
 client = None
 cloud_mode = False
+local_metrics = {
+    "home": 0,
+    "drivers_get": 0,
+    "drivers_post": 0,
+    "drivers_delete": 0
+}
 
 try:
 
@@ -126,8 +132,10 @@ if not cloud_mode:
 
 @app.get("/")
 def home():
-
-    redis_client.incr("home")
+    if redis_client:
+        redis_client.incr("home")
+    else:
+        local_metrics["home"] += 1
 
     return {
         "message": "UALSpeed API running"
@@ -147,7 +155,10 @@ def get_drivers():
             }
         ]
 
-    redis_client.incr("drivers_get")
+    if redis_client:
+        redis_client.incr("drivers_get")
+    else:
+        local_metrics["drivers_get"] += 1
 
     start_time = time.time()
 
@@ -195,8 +206,10 @@ def get_drivers():
 
 @app.post("/drivers")
 def add_driver(driver: Driver):
-
-    redis_client.incr("drivers_post")
+    if redis_client:
+        redis_client.incr("drivers_post")
+    else:
+        local_metrics["drivers_post"] += 1
 
     try:
 
@@ -224,8 +237,10 @@ def add_driver(driver: Driver):
 
 @app.delete("/drivers/{number}")
 def delete_driver(number: int):
-
-    redis_client.incr("drivers_delete")
+    if redis_client:
+        redis_client.incr("drivers_delete")
+    else:
+        local_metrics["drivers_delete"] += 1
 
     result = drivers_collection.delete_one(
         {"number": number}
@@ -249,6 +264,15 @@ def delete_driver(number: int):
 
 @app.get("/metrics")
 def metrics():
+    if not redis_client:
+
+        total_requests = sum(local_metrics.values())
+
+        return {
+            "total_requests": total_requests,
+            "requests_per_endpoint": local_metrics,
+            "average_drivers_get_response_time_ms": 0
+        }
 
     home = int(redis_client.get("home"))
     drivers_get = int(redis_client.get("drivers_get"))
