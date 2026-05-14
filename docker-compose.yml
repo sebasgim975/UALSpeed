@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+
+  api:
+    image: ualspeed-api:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+      - redis
+
+    environment:
+      MONGO_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
+
+    deploy:
+      replicas: 3
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+
+  frontend:
+    image: ualspeed-frontend:latest
+
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+    ports:
+      - "5000:5000"
+
+    depends_on:
+      - api
+
+    deploy:
+      replicas: 2
+
+      restart_policy:
+        condition: on-failure
+
+  mongo1:
+    image: mongo:latest
+
+    command: --replSet rs0
+
+    ports:
+      - "27017:27017"
+
+    volumes:
+      - mongo1_data:/data/db
+
+    deploy:
+      replicas: 1
+
+      restart_policy:
+        condition: any
+
+  mongo2:
+    image: mongo:latest
+
+    command: --replSet rs0
+
+    ports:
+      - "27018:27017"
+
+    volumes:
+      - mongo2_data:/data/db
+
+    deploy:
+      replicas: 1
+
+      restart_policy:
+        condition: any
+
+  mongo3:
+    image: mongo:latest
+
+    command: --replSet rs0
+
+    ports:
+      - "27019:27017"
+
+    volumes:
+      - mongo3_data:/data/db
+
+    deploy:
+      replicas: 1
+
+      restart_policy:
+        condition: any
+
+  redis:
+    image: redis:latest
+
+    ports:
+      - "6379:6379"
+
+    deploy:
+      replicas: 1
+
+      restart_policy:
+        condition: any
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:

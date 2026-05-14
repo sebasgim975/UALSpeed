@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>UALSpeed Dashboard</title>
+</head>
+
+<body>
+
+<h1>UALSpeed Dashboard</h1>
+
+<h2>Telemetry</h2>
+
+<div id="telemetry">
+    Loading telemetry...
+</div>
+
+<h2>Metrics</h2>
+
+<div id="metrics">
+    Loading metrics...
+</div>
+
+<script>
+
+async function loadTelemetry() {
+
+    const response = await fetch(
+        "http://localhost:8000/telemetry"
+    );
+
+    const data = await response.json();
+
+    document.getElementById("telemetry").innerHTML = `
+        <p>Speed: ${data.speed} km/h</p>
+        <p>RPM: ${data.rpm}</p>
+        <p>Track Position: ${data.track_position}</p>
+    `;
+}
+
+async function loadMetrics() {
+
+    const response = await fetch(
+        "http://localhost:8000/metrics"
+    );
+
+    const data = await response.json();
+
+    document.getElementById("metrics").innerHTML = `
+        <p>Total Requests: ${data.total_requests}</p>
+
+        <p>GET Drivers:
+           ${data.requests_per_endpoint.drivers_get}</p>
+
+        <p>POST Drivers:
+           ${data.requests_per_endpoint.drivers_post}</p>
+
+        <p>DELETE Drivers:
+           ${data.requests_per_endpoint.drivers_delete}</p>
+
+        <p>Average Response Time:
+           ${data.average_drivers_get_response_time_ms} ms</p>
+    `;
+}
+
+function updateDashboard() {
+
+    loadTelemetry();
+    loadMetrics();
+}
+
+setInterval(updateDashboard, 1000);
+
+updateDashboard();
+
+</script>
+
+</body>
+
+</html>
